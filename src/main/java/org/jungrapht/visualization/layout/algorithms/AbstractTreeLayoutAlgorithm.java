@@ -48,7 +48,7 @@ public abstract class AbstractTreeLayoutAlgorithm<V> extends AbstractLayoutAlgor
     protected int horizontalVertexSpacing = TREE_LAYOUT_HORIZONTAL_SPACING;
     protected int verticalVertexSpacing = TREE_LAYOUT_VERTICAL_SPACING;
     protected boolean expandLayout = true;
-    protected Function<V, Rectangle> vertexShapeFunction = v -> Rectangle.of(-5, -5, 10, 10);
+    protected Function<V, Rectangle> vertexBoundsFunction = v -> Rectangle.of(-5, -5, 10, 10);
 
     /** @return this builder cast to type B */
     protected B self() {
@@ -100,11 +100,11 @@ public abstract class AbstractTreeLayoutAlgorithm<V> extends AbstractLayoutAlgor
      * if provided, the horizontal and vertical spacings will be replaced by the average width and
      * height of the vertex {@code Shape}s returned by this {@link Function}
      *
-     * @param vertexShapeFunction source of vertex shapes
+     * @param vertexBoundsFunction source of vertex shapes
      * @return this builder
      */
-    public B vertexShapeFunction(Function<V, Rectangle> vertexShapeFunction) {
-      this.vertexShapeFunction = vertexShapeFunction;
+    public B vertexBoundsFunction(Function<V, Rectangle> vertexBoundsFunction) {
+      this.vertexBoundsFunction = vertexBoundsFunction;
       return self();
     }
 
@@ -126,12 +126,12 @@ public abstract class AbstractTreeLayoutAlgorithm<V> extends AbstractLayoutAlgor
    */
   protected AbstractTreeLayoutAlgorithm(Builder<V, ?, ?> builder) {
     super(builder);
-    Objects.requireNonNull(builder.vertexShapeFunction);
+    Objects.requireNonNull(builder.vertexBoundsFunction);
     this.rootPredicate = builder.rootPredicate;
     this.rootComparator = builder.rootComparator;
     this.horizontalVertexSpacing = builder.horizontalVertexSpacing;
     this.verticalVertexSpacing = builder.verticalVertexSpacing;
-    this.vertexShapeFunction = builder.vertexShapeFunction;
+    this.vertexShapeFunction = builder.vertexBoundsFunction;
     this.expandLayout = builder.expandLayout;
   }
 

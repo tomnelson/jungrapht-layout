@@ -3,6 +3,7 @@ package org.jungrapht.visualization.layout.algorithms;
 import static org.jungrapht.visualization.layout.model.LayoutModel.PREFIX;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -13,6 +14,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import org.jgrapht.Graph;
 import org.jungrapht.visualization.layout.algorithms.sugiyama.Layering;
@@ -173,7 +175,7 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
   protected Runnable after;
   protected boolean separateComponents;
   protected Map<E, List<Point>> edgePointMap = new HashMap<>();
-  protected int completionCounter = 0;
+  protected AtomicInteger completionCounter = new AtomicInteger();
 
   protected AbstractHierarchicalMinCrossLayoutAlgorithm(Builder builder) {
     this(
@@ -191,7 +193,7 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
   }
 
   protected AbstractHierarchicalMinCrossLayoutAlgorithm(
-      Function<V, Rectangle> vertexShapeFunction,
+      Function<V, Rectangle> vertexBoundsFunction,
       boolean straightenEdges,
       boolean postStraighten,
       boolean transpose,
@@ -242,12 +244,14 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
   }
 
   protected boolean isComplete(int expected) {
-    boolean isComplete = ++completionCounter >= expected;
-    log.trace(
-        " completionCounter:{}, expected: {} isComplete:{}",
-        completionCounter,
-        expected,
-        isComplete);
+    boolean isComplete = completionCounter.incrementAndGet() >= expected;
+    if (log.isTraceEnabled()) {
+      log.trace(
+          " completionCounter:{}, expected: {} isComplete:{}",
+          completionCounter.get(),
+          expected,
+          isComplete);
+    }
     return isComplete;
   }
 
@@ -266,8 +270,8 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
 
   @Override
   public void visit(LayoutModel<V> layoutModel) {
+    this.completionCounter.set(0);
     this.edgePointMap.clear();
-    this.completionCounter = 0;
 
     Graph<V, E> graph = layoutModel.getGraph();
     if (graph == null || graph.vertexSet().isEmpty()) {
@@ -281,6 +285,7 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
       // LayoutModel for each to visit. Afterwards, append all the layoutModels
       // to the one visited above.
       graphs = ComponentGrouping.getComponentGraphs(graph);
+      layoutModel.setFireEvents(false);
 
       for (int i = 0; i < graphs.size(); i++) {
         LayoutModel<V> componentLayoutModel =
@@ -305,16 +310,12 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
               CompletableFuture.runAsync(runnable, executor)
                   .thenRun(
                       () -> {
-                        log.trace("Sugiyama layout done");
+                        log.trace("MinCross layout done");
                         this.edgePointMap.putAll(runnable.getEdgePointMap());
-                        layoutModel.appendLayoutModel(componentLayoutModel);
                         if (isComplete(graphs.size())) {
-                          //                          this.runAfter(); // run the after function
-                          layoutModel.getViewChangeSupport().fireViewChanged();
-                          // fire an event to say that the layout is done
-                          layoutModel
-                              .getLayoutStateChangeSupport()
-                              .fireLayoutStateChanged(layoutModel, false);
+                          after.run();
+                          layoutModel.setFireEvents(true);
+                          appendAll(layoutModel, layoutModels);
                         }
                       });
         } else {
@@ -322,31 +323,34 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
               CompletableFuture.runAsync(runnable)
                   .thenRun(
                       () -> {
-                        log.trace("Sugiyama layout done");
+                        log.trace("MinCross layout done");
                         this.edgePointMap.putAll(runnable.getEdgePointMap());
-                        layoutModel.appendLayoutModel(componentLayoutModel);
                         if (isComplete(graphs.size())) {
-                          //                          this.runAfter(); // run the after function
-                          layoutModel.getViewChangeSupport().fireViewChanged();
-                          // fire an event to say that the layout is done
-                          layoutModel
-                              .getLayoutStateChangeSupport()
-                              .fireLayoutStateChanged(layoutModel, false);
+                          after.run();
+                          layoutModel.setFireEvents(true);
+                          appendAll(layoutModel, layoutModels);
                         }
                       });
         }
       } else {
         runnable.run();
+        log.trace("MinCross layout done");
         this.edgePointMap.putAll(runnable.getEdgePointMap());
-        layoutModel.appendLayoutModel(componentLayoutModel);
         if (isComplete(graphs.size())) {
           after.run();
-          layoutModel.getViewChangeSupport().fireViewChanged();
-          // fire an event to say that the layout is done
-          layoutModel.getLayoutStateChangeSupport().fireLayoutStateChanged(layoutModel, false);
+          layoutModel.setFireEvents(true);
+          appendAll(layoutModel, layoutModels);
         }
       }
     }
+  }
+
+  private void appendAll(
+      LayoutModel<V> parentLayoutModel, Collection<LayoutModel<V>> childLayoutModels) {
+    childLayoutModels.forEach(parentLayoutModel::appendLayoutModel);
+    parentLayoutModel
+        .getLayoutStateChangeSupport()
+        .fireLayoutStateChanged(parentLayoutModel, false);
   }
 
   @Override

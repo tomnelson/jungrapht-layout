@@ -524,7 +524,6 @@ public class TidierTreeLayoutAlgorithm<V, E> extends AbstractTreeLayoutAlgorithm
       Graph<V, ?> tree = TreeLayoutAlgorithm.getSpanningTree(graph);
       layoutModel.setGraph(tree);
       visit(layoutModel);
-      layoutModel.setGraph(graph);
       return;
     }
 
