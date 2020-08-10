@@ -1,8 +1,8 @@
 package org.jungrapht.visualization.layout.algorithms;
 
 import java.util.concurrent.Executor;
-import java.util.concurrent.Future;
 import java.util.function.Function;
+import org.jgrapht.Graph;
 import org.jungrapht.visualization.layout.algorithms.sugiyama.Layering;
 import org.jungrapht.visualization.layout.algorithms.sugiyama.SugiyamaRunnable;
 import org.jungrapht.visualization.layout.algorithms.util.AfterRunnable;
@@ -33,11 +33,10 @@ import org.slf4j.LoggerFactory;
 public class SugiyamaLayoutAlgorithm<V, E> extends AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
     implements LayoutAlgorithm<V>,
         VertexBoundsFunctionConsumer<V>,
-        Layered,
+        Layered<V, E>,
         AfterRunnable,
         Threaded,
-        ExecutorConsumer,
-        Future {
+        ExecutorConsumer {
 
   private static final Logger log = LoggerFactory.getLogger(SugiyamaLayoutAlgorithm.class);
 
@@ -88,7 +87,7 @@ public class SugiyamaLayoutAlgorithm<V, E> extends AbstractHierarchicalMinCrossL
     this(SugiyamaLayoutAlgorithm.edgeAwareBuilder());
   }
 
-  protected SugiyamaLayoutAlgorithm(Builder builder) {
+  protected SugiyamaLayoutAlgorithm(Builder<V, E, ?, ?> builder) {
     this(
         builder.vertexBoundsFunction,
         builder.straightenEdges,
@@ -96,6 +95,7 @@ public class SugiyamaLayoutAlgorithm<V, E> extends AbstractHierarchicalMinCrossL
         builder.transpose,
         builder.transposeLimit,
         builder.maxLevelCross,
+        builder.maxLevelCrossFunction,
         builder.expandLayout,
         builder.layering,
         builder.threaded,
@@ -111,6 +111,7 @@ public class SugiyamaLayoutAlgorithm<V, E> extends AbstractHierarchicalMinCrossL
       boolean transpose,
       int transposeLimit,
       int maxLevelCross,
+      Function<Graph<V, E>, Integer> maxLevelCrossFunction,
       boolean expandLayout,
       Layering layering,
       boolean threaded,
@@ -123,6 +124,7 @@ public class SugiyamaLayoutAlgorithm<V, E> extends AbstractHierarchicalMinCrossL
         postStraighten,
         transpose,
         maxLevelCross,
+        maxLevelCrossFunction,
         expandLayout,
         layering,
         threaded,
@@ -142,7 +144,7 @@ public class SugiyamaLayoutAlgorithm<V, E> extends AbstractHierarchicalMinCrossL
         .postStraighten(postStraighten)
         .transpose(transpose)
         .transposeLimit(transposeLimit)
-        .maxLevelCross(maxLevelCross)
+        .maxLevelCross(maxLevelCrossFunction.apply(layoutModel.getGraph()))
         .layering(layering)
         .multiComponent(componentCount > 1)
         .build();

@@ -147,7 +147,10 @@ public class FRLayoutAlgorithm<V> extends AbstractIterativeLayoutAlgorithm<V>
       temperature = layoutModel.getWidth() / 10;
 
       forceConstant =
-          Math.sqrt(layoutModel.getHeight() * layoutModel.getWidth() / graph.vertexSet().size());
+          Math.sqrt(
+              (double) layoutModel.getHeight()
+                  * (double) layoutModel.getWidth()
+                  / graph.vertexSet().size());
 
       attractionConstant = attractionMultiplier * forceConstant;
       repulsionConstant = repulsionMultiplier * forceConstant;
@@ -196,6 +199,9 @@ public class FRLayoutAlgorithm<V> extends AbstractIterativeLayoutAlgorithm<V>
         for (V vertex : graph.vertexSet()) {
           if (layoutModel.isLocked(vertex)) {
             continue;
+          }
+          if (cancelled) {
+            return;
           }
           calcPositions(vertex);
         }
@@ -298,7 +304,7 @@ public class FRLayoutAlgorithm<V> extends AbstractIterativeLayoutAlgorithm<V>
   /** @return true once the current iteration has passed the maximum count. */
   @Override
   public boolean done() {
-
+    if (cancelled) return true;
     boolean done = currentIteration > maxIterations || temperature < 1.0 / max_dimension;
     if (done) {
       runAfter();

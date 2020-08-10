@@ -5,5 +5,8 @@ import java.util.Map;
 import org.jungrapht.visualization.layout.model.Point;
 
 public interface LayeredRunnable<E> extends Runnable {
+
   Map<E, List<Point>> getEdgePointMap();
+
+  void cancel();
 }

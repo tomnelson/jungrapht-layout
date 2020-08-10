@@ -192,6 +192,7 @@ public class SugiyamaRunnable<V, E> implements LayeredRunnable<E> {
   protected Map<LV<V>, VertexMetadata<V>> vertexMetadataMap = new HashMap<>();
   protected Map<E, List<Point>> edgePointMap = new HashMap<>();
   protected boolean multiComponent;
+  protected boolean cancelled;
 
   protected SugiyamaRunnable(Builder<V, E, ?, ?> builder) {
     this(
@@ -243,6 +244,11 @@ public class SugiyamaRunnable<V, E> implements LayeredRunnable<E> {
   }
 
   @Override
+  public void cancel() {
+    this.cancelled = true;
+  }
+
+  @Override
   public void run() {
     this.graph = layoutModel.getGraph();
 
@@ -276,8 +282,8 @@ public class SugiyamaRunnable<V, E> implements LayeredRunnable<E> {
     log.trace("remove cycles took {}", (cycles - transformTime));
 
     // check for interrupted before layering
-    if (Thread.currentThread().isInterrupted()) {
-      log.info("interrupted before layering");
+    if (cancelled || Thread.currentThread().isInterrupted()) {
+      log.info("interrupted before layering, cancelled: {}", cancelled);
       return;
     }
     List<List<LV<V>>> layers;
@@ -341,8 +347,8 @@ public class SugiyamaRunnable<V, E> implements LayeredRunnable<E> {
     int lowestCrossCount = Integer.MAX_VALUE;
     // order the ranks
     for (int i = 0; i < maxLevelCross; i++) {
-      if (Thread.currentThread().isInterrupted()) {
-        log.info("interrupted in level cross");
+      if (cancelled || Thread.currentThread().isInterrupted()) {
+        log.info("interrupted in level cross, cancelled: {}", cancelled);
         return;
       }
       if (i % 2 == 0) {
@@ -408,8 +414,8 @@ public class SugiyamaRunnable<V, E> implements LayeredRunnable<E> {
     GraphLayers.checkLayers(layersArray);
     Map<LV<V>, Point> vertexPointMap = new HashMap<>();
 
-    if (Thread.currentThread().isInterrupted()) {
-      log.info("interrupted before compaction");
+    if (cancelled || Thread.currentThread().isInterrupted()) {
+      log.info("interrupted before compaction, cancelled: {}", cancelled);
       return;
     }
     if (straightenEdges) {
@@ -572,6 +578,10 @@ public class SugiyamaRunnable<V, E> implements LayeredRunnable<E> {
     long articulatedEdgeTime = System.currentTimeMillis();
     log.trace("articulated edges took {}", (articulatedEdgeTime - pointsSetTime));
 
+    if (cancelled) {
+      log.info("interrupted before setting layoutModel from svGraph, cancelled: {}", cancelled);
+      return;
+    }
     svGraph.vertexSet().forEach(v -> layoutModel.set(v.getVertex(), v.getPoint()));
   }
 
@@ -720,13 +730,16 @@ public class SugiyamaRunnable<V, E> implements LayeredRunnable<E> {
     return InsertionSortCounter.insertionSortCounter(targetIndices);
   }
 
+  Function<LV<V>, int[]> upperNeighborIndicesMethod = this::upperNeighborIndices;
+  Function<LV<V>, int[]> lowerNeighborIndicesMethod = this::lowerNeighborIndices;
+
   //http://www.graphviz.org/Documentation/TSE93.pdf p 15
   void median(LV<V>[][] layers, int i, Graph<LV<V>, LE<V, E>> svGraph) {
 
     if (i % 2 == 0) {
       for (int r = 0; r < layers.length; r++) {
         for (LV<V> v : layers[r]) {
-          double median = medianValue(v, this::upperNeighborIndices, svGraph);
+          double median = medianValue(v, upperNeighborIndicesMethod, svGraph);
           v.setMeasure(median);
         }
         medianSortAndFixMetadata(layers[r]);
@@ -735,7 +748,7 @@ public class SugiyamaRunnable<V, E> implements LayeredRunnable<E> {
     } else {
       for (int r = layers.length - 1; r >= 0; r--) {
         for (LV<V> v : layers[r]) {
-          double median = medianValue(v, this::lowerNeighborIndices, svGraph);
+          double median = medianValue(v, lowerNeighborIndicesMethod, svGraph);
           v.setMeasure(median);
         }
         medianSortAndFixMetadata(layers[r]);
@@ -748,7 +761,7 @@ public class SugiyamaRunnable<V, E> implements LayeredRunnable<E> {
 
     for (int r = 0; r < layers.length; r++) {
       for (LV<V> v : layers[r]) {
-        double median = medianValue(v, this::upperNeighborIndices, svGraph);
+        double median = medianValue(v, upperNeighborIndicesMethod, svGraph);
         v.setMeasure(median);
       }
       medianSortAndFixMetadata(layers[r]);
@@ -760,7 +773,7 @@ public class SugiyamaRunnable<V, E> implements LayeredRunnable<E> {
 
     for (int r = layers.length - 1; r >= 0; r--) {
       for (LV<V> v : layers[r]) {
-        double median = medianValue(v, this::lowerNeighborIndices, svGraph);
+        double median = medianValue(v, lowerNeighborIndicesMethod, svGraph);
         v.setMeasure(median);
       }
       medianSortAndFixMetadata(layers[r]);

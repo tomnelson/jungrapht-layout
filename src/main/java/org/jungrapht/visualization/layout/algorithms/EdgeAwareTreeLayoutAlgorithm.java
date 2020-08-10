@@ -145,11 +145,7 @@ public class EdgeAwareTreeLayoutAlgorithm<V, E> extends TreeLayoutAlgorithm<V>
 
   @Override
   public void visit(LayoutModel<V> layoutModel) {
-    Graph<V, ?> graph = layoutModel.getGraph();
-    if (graph == null || graph.vertexSet().isEmpty()) {
-      return;
-    }
-    buildTree(layoutModel);
+    super.visit(layoutModel);
   }
 
   /** @param vertexPredicate parameter to set */

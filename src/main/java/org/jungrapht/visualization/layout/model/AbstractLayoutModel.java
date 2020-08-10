@@ -6,7 +6,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.concurrent.Future;
 import java.util.function.Function;
 import org.jgrapht.Graph;
 import org.jungrapht.visualization.layout.algorithms.IterativeLayoutAlgorithm;
@@ -90,11 +89,10 @@ public abstract class AbstractLayoutModel<V> implements LayoutModel<V> {
   protected boolean createVisRunnable;
 
   protected Graph<V, ?> graph;
-  protected VisRunnable visRunnable;
+  protected VisRunnable visRunnable = VisRunnable.noop();
   /** @value relaxing true is this layout model is being accessed by a running relaxer */
   protected boolean relaxing;
 
-  protected Future theFuture;
   /** Handles events fired when vertex locations are changed */
   protected LayoutVertexPositionChange.Support layoutVertexPositionSupport =
       LayoutVertexPositionChange.Support.create();
@@ -137,19 +135,11 @@ public abstract class AbstractLayoutModel<V> implements LayoutModel<V> {
   }
 
   /** stop any running Relaxer */
-  public void stopRelaxer() {
+  public void stop() {
     if (this.visRunnable != null) {
       this.visRunnable.stop();
     }
-    if (theFuture != null) {
-      theFuture.cancel(true);
-    }
     setRelaxing(false);
-  }
-
-  @Override
-  public Future getTheFuture() {
-    return theFuture;
   }
 
   /**
@@ -168,6 +158,10 @@ public abstract class AbstractLayoutModel<V> implements LayoutModel<V> {
    */
   @Override
   public void accept(LayoutAlgorithm<V> layoutAlgorithm) {
+    if (graph.vertexSet().isEmpty()) {
+      return;
+    }
+    log.debug("accept {}", layoutAlgorithm);
     this.appendageCount = 0;
     // stop any running layout algorithm
     if (this.visRunnable != null) {
@@ -176,20 +170,22 @@ public abstract class AbstractLayoutModel<V> implements LayoutModel<V> {
       }
       this.visRunnable.stop();
     }
-    if (theFuture != null) {
-      theFuture.cancel(true);
-    }
     // if there is an initialDimensionFunction, and if the LayoutAlgorithm
     // is not an Unconstrained type (not a Tree or Circle) then apply the function to
     // set the layout area constraints
-    log.trace("{} is constrained: {}", layoutAlgorithm, layoutAlgorithm.constrained());
+    log.debug("{} is constrained: {}", layoutAlgorithm, layoutAlgorithm.constrained());
+
     if (layoutAlgorithm.constrained()) {
+      log.trace("{} constrained: {}", layoutAlgorithm, true);
       Pair<Integer> dimension = initialDimensionFunction.apply(graph);
       // setSize will fire an event with the new size
       setSize(dimension.first, dimension.second);
     } else {
-      // setSize will fire an event if the size has changed
-      setSize(preferredWidth, preferredHeight);
+      //      log.trace("{} constrained: {}", layoutAlgorithm, false);
+      //       setSize will fire an event if the size has changed
+      //            setSize(preferredWidth, preferredHeight);
+      // leave the size the same but fire an event for the transforms
+      //      getLayoutSizeChangeSupport().fireLayoutSizeChanged(this, width, height);
     }
 
     log.trace("reset the model size to {} x {}", preferredWidth, preferredHeight);
@@ -200,16 +196,12 @@ public abstract class AbstractLayoutModel<V> implements LayoutModel<V> {
     if (layoutAlgorithm != null) {
       layoutAlgorithm.visit(this);
 
-      // e.g. the SugiyamaLayoutAlgorithm
-      if (layoutAlgorithm instanceof Future) {
-        this.theFuture = (Future) layoutAlgorithm;
-      }
       if (graph.vertexSet().size() > 0
           && // don't create thread for empty graph
           createVisRunnable
           && layoutAlgorithm instanceof IterativeLayoutAlgorithm) {
         setRelaxing(true);
-        // don't start a visRunner if the called has set threaded tp false
+        // don't start a visRunner if the called has set threaded to false
         setupVisRunner((IterativeLayoutAlgorithm) layoutAlgorithm);
         // ...the visRunner will fire the layoutStateChanged event when it finishes
 
@@ -245,9 +237,6 @@ public abstract class AbstractLayoutModel<V> implements LayoutModel<V> {
     if (visRunnable != null) {
       visRunnable.stop();
     }
-    if (theFuture != null) {
-      theFuture.cancel(true);
-    }
 
     // layout becomes active
     layoutStateChangeSupport.fireLayoutStateChanged(this, true);
@@ -265,26 +254,27 @@ public abstract class AbstractLayoutModel<V> implements LayoutModel<V> {
 
     if (executor != null) {
       // use the Executor provided with the LayoutAlgorithm
+      log.debug("start visRunner thread");
       CompletableFuture.runAsync(visRunnable, executor)
           .thenRun(
               () -> {
-                log.trace("We're done");
+                log.debug("We're done");
                 setRelaxing(false);
                 this.viewChangeSupport.fireViewChanged();
                 // fire an event to say that the layout relax is done
                 this.layoutStateChangeSupport.fireLayoutStateChanged(this, false);
               });
     } else {
-      theFuture =
-          CompletableFuture.runAsync(visRunnable)
-              .thenRun(
-                  () -> {
-                    log.trace("We're done");
-                    setRelaxing(false);
-                    this.viewChangeSupport.fireViewChanged();
-                    // fire an event to say that the layout relax is done
-                    this.layoutStateChangeSupport.fireLayoutStateChanged(this, false);
-                  });
+      log.debug("start visRunner thread");
+      CompletableFuture.runAsync(visRunnable)
+          .thenRun(
+              () -> {
+                log.debug("We're done");
+                setRelaxing(false);
+                this.viewChangeSupport.fireViewChanged();
+                // fire an event to say that the layout relax is done
+                this.layoutStateChangeSupport.fireLayoutStateChanged(this, false);
+              });
     }
   }
 

@@ -349,7 +349,7 @@ public class ForceAtlas2LayoutAlgorithm<V> extends AbstractIterativeLayoutAlgori
 
   @Override
   public boolean done() {
-
+    if (cancelled) return true;
     boolean done = currentIteration >= maxIterations;
     if (done) {
       runAfter();
@@ -556,6 +556,9 @@ public class ForceAtlas2LayoutAlgorithm<V> extends AbstractIterativeLayoutAlgori
         for (V vertex : graph.vertexSet()) {
           if (layoutModel.isLocked(vertex)) {
             continue;
+          }
+          if (cancelled) {
+            return;
           }
           calcPositions(vertex);
         }

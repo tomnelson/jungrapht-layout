@@ -99,7 +99,7 @@ public class GEMLayoutAlgorithm<V, E> extends AbstractIterativeLayoutAlgorithm<V
     this(GEMLayoutAlgorithm.edgeAwareBuilder());
   }
 
-  protected GEMLayoutAlgorithm(Builder builder) {
+  protected GEMLayoutAlgorithm(Builder<V, E, ?, ?> builder) {
     super(builder);
     this.maxIterations = builder.maxIterations;
     this.multi = builder.multi;
@@ -267,21 +267,36 @@ public class GEMLayoutAlgorithm<V, E> extends AbstractIterativeLayoutAlgorithm<V
   private Graph<V, E> graph;
 
   public void visit(LayoutModel<V> layoutModel) {
+    log.debug("visit");
     super.visit(layoutModel);
     this.graph = layoutModel.getGraph();
     if (graph == null || graph.vertexSet().isEmpty()) {
       return;
     }
+    log.debug("initialize");
     this.initialize();
+    log.debug("arrange");
     this.arrange();
     if (adjustToFit) {
       adjustToFit();
     }
     Rectangle range = computeLayoutExtent(layoutModel);
-    // add the padding
-    range = Rectangle.from(range.min().add(-50, -50), range.max().add(50, 50));
+    // add padding of 5% of width and height
+    int widthPadding = (int) (range.width * 0.05);
+    int heightPadding = (int) (range.height * 0.05);
+    range =
+        Rectangle.from(
+            range.min().add(-widthPadding, -heightPadding),
+            range.max().add(widthPadding, heightPadding));
+
+    log.debug("offset");
+    // offset all the vertex points by widthPadding and heightPadding
+    graph
+        .vertexSet()
+        .forEach(v -> layoutModel.set(v, layoutModel.apply(v).add(widthPadding, heightPadding)));
 
     int maxDimension = Math.max((int) range.width, (int) range.height);
+    log.debug("layoutModel.setSize({}, {}", maxDimension, maxDimension);
     layoutModel.setSize(maxDimension, maxDimension);
   }
 
@@ -340,10 +355,9 @@ public class GEMLayoutAlgorithm<V, E> extends AbstractIterativeLayoutAlgorithm<V
   }
 
   public synchronized void step() {
-    if (temperature > stop_temperature && iteration < stop_iteration) {
+    if (temperature > stop_temperature && iteration < stop_iteration && !cancelled) {
       log.trace("iteration: {}", iteration);
       a_round();
-      if (cancelled) return;
     } else {
       this.done = true;
     }
@@ -351,6 +365,7 @@ public class GEMLayoutAlgorithm<V, E> extends AbstractIterativeLayoutAlgorithm<V
 
   @Override
   public boolean done() {
+    if (cancelled) return true;
     if (done) {
       runAfter();
     }
@@ -710,7 +725,7 @@ public class GEMLayoutAlgorithm<V, E> extends AbstractIterativeLayoutAlgorithm<V
       runNormal(getGraph());
 
       // set location of nodes in graph
-      for (int i = 0; i < nodeCount; i++) {
+      for (int i = 0; i < nodeCount && !cancelled; i++) {
         Properties p = gemProp[i];
         V n = invmap[i];
         layoutModel.set(n, p.x, p.y);

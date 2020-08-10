@@ -6,14 +6,12 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import org.jgrapht.Graph;
@@ -50,11 +48,10 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
     implements LayoutAlgorithm<V>,
         VertexBoundsFunctionConsumer<V>,
         EdgeArticulationFunctionSupplier<E>,
-        Layered,
+        Layered<V, E>,
         AfterRunnable,
         Threaded,
-        ExecutorConsumer,
-        Future {
+        ExecutorConsumer {
 
   private static final Logger log =
       LoggerFactory.getLogger(AbstractHierarchicalMinCrossLayoutAlgorithm.class);
@@ -89,6 +86,7 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
         Boolean.parseBoolean(System.getProperty(MINCROSS_POST_STRAIGHTEN, "true"));;
     protected boolean transpose = true;
     protected int maxLevelCross = Integer.getInteger(MAX_LEVEL_CROSS, 23);
+    protected Function<Graph<V, E>, Integer> maxLevelCrossFunction = g -> maxLevelCross;
     protected boolean expandLayout = true;
     protected Layering layering = Layering.TOP_DOWN;
     protected Runnable after = () -> {};
@@ -123,6 +121,11 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
 
     public B maxLevelCross(int maxLevelCross) {
       this.maxLevelCross = maxLevelCross;
+      return self();
+    }
+
+    public B maxLevelCrossFunction(Function<Graph<V, E>, Integer> maxLevelCrossFunction) {
+      this.maxLevelCrossFunction = maxLevelCrossFunction;
       return self();
     }
 
@@ -167,15 +170,18 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
   protected boolean postStraighten;
   protected boolean transpose;
   protected int maxLevelCross;
+  protected Function<Graph<V, E>, Integer> maxLevelCrossFunction;
   protected boolean expandLayout;
   protected boolean threaded;
   protected Layering layering;
   protected Executor executor;
-  protected CompletableFuture theFuture;
   protected Runnable after;
   protected boolean separateComponents;
   protected Map<E, List<Point>> edgePointMap = new HashMap<>();
   protected AtomicInteger completionCounter = new AtomicInteger();
+  protected Set<LayeredRunnable<E>> runnables = new HashSet<>();
+  protected LayoutModel<V> layoutModel; // ref used to switch events back on after cancel
+  protected boolean cancelled;
 
   protected AbstractHierarchicalMinCrossLayoutAlgorithm(Builder builder) {
     this(
@@ -184,6 +190,7 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
         builder.postStraighten,
         builder.transpose,
         builder.maxLevelCross,
+        builder.maxLevelCrossFunction,
         builder.expandLayout,
         builder.layering,
         builder.threaded,
@@ -198,6 +205,7 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
       boolean postStraighten,
       boolean transpose,
       int maxLevelCross,
+      Function<Graph<V, E>, Integer> maxLevelCrossFunction,
       boolean expandLayout,
       Layering layering,
       boolean threaded,
@@ -209,6 +217,7 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
     this.postStraighten = postStraighten;
     this.transpose = transpose;
     this.maxLevelCross = maxLevelCross;
+    this.maxLevelCrossFunction = maxLevelCrossFunction;
     this.expandLayout = expandLayout;
     this.layering = layering;
     this.threaded = threaded;
@@ -234,6 +243,11 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
   }
 
   @Override
+  public void setMaxLevelCrossFunction(Function<Graph<V, E>, Integer> maxLevelCrossFunction) {
+    this.maxLevelCrossFunction = maxLevelCrossFunction;
+  }
+
+  @Override
   public boolean isThreaded() {
     return this.threaded;
   }
@@ -241,6 +255,15 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
   @Override
   public void setThreaded(boolean threaded) {
     this.threaded = threaded;
+  }
+
+  @Override
+  public void cancel() {
+    cancelled = true;
+    runnables.forEach(LayeredRunnable::cancel);
+    if (layoutModel != null) {
+      layoutModel.setFireEvents(true);
+    }
   }
 
   protected boolean isComplete(int expected) {
@@ -270,6 +293,7 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
 
   @Override
   public void visit(LayoutModel<V> layoutModel) {
+    this.layoutModel = layoutModel;
     this.completionCounter.set(0);
     this.edgePointMap.clear();
 
@@ -304,39 +328,38 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
     for (LayoutModel<V> componentLayoutModel : layoutModels) {
 
       LayeredRunnable<E> runnable = getRunnable(graphs.size(), componentLayoutModel);
+      runnables.add(runnable);
       if (threaded) {
         if (executor != null) {
-          theFuture =
-              CompletableFuture.runAsync(runnable, executor)
-                  .thenRun(
-                      () -> {
-                        log.trace("MinCross layout done");
-                        this.edgePointMap.putAll(runnable.getEdgePointMap());
-                        if (isComplete(graphs.size())) {
-                          after.run();
-                          layoutModel.setFireEvents(true);
-                          appendAll(layoutModel, layoutModels);
-                        }
-                      });
+          CompletableFuture.runAsync(runnable, executor)
+              .thenRun(
+                  () -> {
+                    log.trace("MinCross layout done");
+                    this.edgePointMap.putAll(runnable.getEdgePointMap());
+                    if (!cancelled && isComplete(graphs.size())) {
+                      after.run();
+                      layoutModel.setFireEvents(true);
+                      appendAll(layoutModel, layoutModels);
+                    }
+                  });
         } else {
-          theFuture =
-              CompletableFuture.runAsync(runnable)
-                  .thenRun(
-                      () -> {
-                        log.trace("MinCross layout done");
-                        this.edgePointMap.putAll(runnable.getEdgePointMap());
-                        if (isComplete(graphs.size())) {
-                          after.run();
-                          layoutModel.setFireEvents(true);
-                          appendAll(layoutModel, layoutModels);
-                        }
-                      });
+          CompletableFuture.runAsync(runnable)
+              .thenRun(
+                  () -> {
+                    log.trace("MinCross layout done");
+                    this.edgePointMap.putAll(runnable.getEdgePointMap());
+                    if (!cancelled && isComplete(graphs.size())) {
+                      after.run();
+                      layoutModel.setFireEvents(true);
+                      appendAll(layoutModel, layoutModels);
+                    }
+                  });
         }
       } else {
         runnable.run();
         log.trace("MinCross layout done");
         this.edgePointMap.putAll(runnable.getEdgePointMap());
-        if (isComplete(graphs.size())) {
+        if (!cancelled && isComplete(graphs.size())) {
           after.run();
           layoutModel.setFireEvents(true);
           appendAll(layoutModel, layoutModels);
@@ -347,51 +370,14 @@ public abstract class AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
 
   private void appendAll(
       LayoutModel<V> parentLayoutModel, Collection<LayoutModel<V>> childLayoutModels) {
-    childLayoutModels.forEach(parentLayoutModel::appendLayoutModel);
-    parentLayoutModel
-        .getLayoutStateChangeSupport()
-        .fireLayoutStateChanged(parentLayoutModel, false);
-  }
-
-  @Override
-  public boolean cancel(boolean mayInterruptIfRunning) {
-    if (theFuture != null) {
-      return theFuture.cancel(mayInterruptIfRunning);
+    log.trace("appendAll, cancelled: {}", cancelled);
+    if (!cancelled) {
+      log.trace("appending: {} child layout models", childLayoutModels.size());
+      childLayoutModels.forEach(parentLayoutModel::appendLayoutModel);
+      parentLayoutModel
+          .getLayoutStateChangeSupport()
+          .fireLayoutStateChanged(parentLayoutModel, false);
     }
-    return false;
-  }
-
-  @Override
-  public boolean isCancelled() {
-    if (theFuture != null) {
-      return theFuture.isCancelled();
-    }
-    return false;
-  }
-
-  @Override
-  public boolean isDone() {
-    if (theFuture != null) {
-      return theFuture.isDone();
-    }
-    return false;
-  }
-
-  @Override
-  public Object get() throws InterruptedException, ExecutionException {
-    if (theFuture != null) {
-      return theFuture.get();
-    }
-    return null;
-  }
-
-  @Override
-  public Object get(long timeout, TimeUnit unit)
-      throws InterruptedException, ExecutionException, TimeoutException {
-    if (theFuture != null) {
-      return theFuture.get(timeout, unit);
-    }
-    return null;
   }
 
   @Override

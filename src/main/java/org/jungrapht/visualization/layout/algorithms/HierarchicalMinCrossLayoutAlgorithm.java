@@ -3,7 +3,6 @@ package org.jungrapht.visualization.layout.algorithms;
 import static org.jungrapht.visualization.layout.model.LayoutModel.PREFIX;
 
 import java.util.concurrent.Executor;
-import java.util.concurrent.Future;
 import java.util.function.Function;
 import org.jgrapht.Graph;
 import org.jungrapht.visualization.layout.algorithms.eiglsperger.EiglspergerRunnable;
@@ -42,11 +41,10 @@ public class HierarchicalMinCrossLayoutAlgorithm<V, E>
     extends AbstractHierarchicalMinCrossLayoutAlgorithm<V, E>
     implements LayoutAlgorithm<V>,
         VertexBoundsFunctionConsumer<V>,
-        Layered,
+        Layered<V, E>,
         AfterRunnable,
         ExecutorConsumer,
-        Threaded,
-        Future {
+        Threaded {
 
   private static final Logger log =
       LoggerFactory.getLogger(HierarchicalMinCrossLayoutAlgorithm.class);
@@ -108,7 +106,7 @@ public class HierarchicalMinCrossLayoutAlgorithm<V, E>
     this(HierarchicalMinCrossLayoutAlgorithm.edgeAwareBuilder());
   }
 
-  private HierarchicalMinCrossLayoutAlgorithm(Builder builder) {
+  private HierarchicalMinCrossLayoutAlgorithm(Builder<V, E, ?, ?> builder) {
     this(
         builder.vertexBoundsFunction,
         builder.eiglspergerThreshold,
@@ -117,6 +115,7 @@ public class HierarchicalMinCrossLayoutAlgorithm<V, E>
         builder.transpose,
         builder.transposeLimit,
         builder.maxLevelCross,
+        builder.maxLevelCrossFunction,
         builder.expandLayout,
         builder.layering,
         builder.threaded,
@@ -133,6 +132,7 @@ public class HierarchicalMinCrossLayoutAlgorithm<V, E>
       boolean transpose,
       int transposeLimit,
       int maxLevelCross,
+      Function<Graph<V, E>, Integer> maxLevelCrossFunction,
       boolean expandLayout,
       Layering layering,
       boolean threaded,
@@ -145,6 +145,7 @@ public class HierarchicalMinCrossLayoutAlgorithm<V, E>
         postStraighten,
         transpose,
         maxLevelCross,
+        maxLevelCrossFunction,
         expandLayout,
         layering,
         threaded,

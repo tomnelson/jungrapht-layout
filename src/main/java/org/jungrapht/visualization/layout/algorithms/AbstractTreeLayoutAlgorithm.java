@@ -18,6 +18,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import org.jgrapht.alg.util.NeighborCache;
 import org.jungrapht.visualization.layout.model.LayoutModel;
 import org.jungrapht.visualization.layout.model.Rectangle;
 import org.slf4j.Logger;
@@ -131,7 +132,7 @@ public abstract class AbstractTreeLayoutAlgorithm<V> extends AbstractLayoutAlgor
     this.rootComparator = builder.rootComparator;
     this.horizontalVertexSpacing = builder.horizontalVertexSpacing;
     this.verticalVertexSpacing = builder.verticalVertexSpacing;
-    this.vertexShapeFunction = builder.vertexBoundsFunction;
+    this.vertexBoundsFunction = builder.vertexBoundsFunction;
     this.expandLayout = builder.expandLayout;
   }
 
@@ -152,10 +153,12 @@ public abstract class AbstractTreeLayoutAlgorithm<V> extends AbstractLayoutAlgor
 
   protected Set<V> visitedVertices = new HashSet<>();
 
+  protected NeighborCache<V, ?> neighborCache;
+
   @Override
-  public void setVertexBoundsFunction(Function<V, Rectangle> vertexShapeFunction) {
-    Objects.requireNonNull(vertexShapeFunction);
-    this.vertexShapeFunction = vertexShapeFunction;
+  public void setVertexBoundsFunction(Function<V, Rectangle> vertexBoundsFunction) {
+    Objects.requireNonNull(vertexBoundsFunction);
+    this.vertexBoundsFunction = vertexBoundsFunction;
   }
 
   /**
@@ -174,7 +177,7 @@ public abstract class AbstractTreeLayoutAlgorithm<V> extends AbstractLayoutAlgor
    * if provided (non-null) then the horizontalVertexSpacing and verticalVertexSpacing values will
    * be replaced by 2 times the average width and height of all vertex shapes
    */
-  protected Function<V, Rectangle> vertexShapeFunction;
+  protected Function<V, Rectangle> vertexBoundsFunction;
 
   /** if {@code true} then expand the layout size to accomodate the entire tree. */
   protected boolean expandLayout;
@@ -186,7 +189,9 @@ public abstract class AbstractTreeLayoutAlgorithm<V> extends AbstractLayoutAlgor
    * @param layoutModel the mediator between the container for vertices (the Graph) and the mapping
    */
   @Override
-  public abstract void visit(LayoutModel<V> layoutModel);
+  public void visit(LayoutModel<V> layoutModel) {
+    this.neighborCache = new NeighborCache<>(layoutModel.getGraph());
+  }
 
   /**
    * @return the {@link Map} of vertex to {@link Rectangle} that will hold all of the subtree rooted

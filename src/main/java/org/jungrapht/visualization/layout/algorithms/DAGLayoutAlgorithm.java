@@ -198,6 +198,9 @@ public class DAGLayoutAlgorithm<V, E> extends SpringLayoutAlgorithm<V, E> {
         if (layoutModel.isLocked(vertex)) {
           continue;
         }
+        if (cancelled) {
+          return;
+        }
         SpringVertexData vd = springVertexData.computeIfAbsent(vertex, v -> new SpringVertexData());
         Point xyd = layoutModel.apply(vertex);
 
@@ -259,6 +262,7 @@ public class DAGLayoutAlgorithm<V, E> extends SpringLayoutAlgorithm<V, E> {
   /** Override incrementsAreDone so that we can eventually stop. */
   @Override
   public boolean done() {
+    if (cancelled) return true;
     boolean done = stoppingIncrements && incrementsLeft == 0;
     if (done) {
       runAfter();

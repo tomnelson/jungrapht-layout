@@ -211,6 +211,9 @@ public class SpringLayoutAlgorithm<V, E> extends AbstractIterativeLayoutAlgorith
           if (layoutModel.isLocked(vertex)) {
             continue;
           }
+          if (cancelled) {
+            return;
+          }
           SpringVertexData vd =
               springVertexData.computeIfAbsent(vertex, v -> new SpringVertexData());
           if (vd == null) {
@@ -278,6 +281,7 @@ public class SpringLayoutAlgorithm<V, E> extends AbstractIterativeLayoutAlgorith
 
   /** @return false */
   public boolean done() {
+    if (cancelled) return true;
     if (this.done) {
       runAfter();
     }
