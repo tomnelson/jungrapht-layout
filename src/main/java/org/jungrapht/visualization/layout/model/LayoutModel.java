@@ -37,8 +37,6 @@ public interface LayoutModel<V>
         LayoutVertexPositionChange.Listener<V>,
         LayoutSizeChange.Producer<V> {
 
-  String PREFIX = "jungrapht.";
-
   /**
    * a builder for LayoutModel instances
    *
@@ -156,13 +154,6 @@ public interface LayoutModel<V>
    * @return relaxing
    */
   boolean isRelaxing();
-
-  //  /**
-  //   * a handle to the relaxer thread; may be used to attach a process to run after relax is complete
-  //   *
-  //   * @return the Future
-  //   */
-  //  Future getTheFuture();
 
   /**
    * @param vertex the vertex whose locked state is being queried

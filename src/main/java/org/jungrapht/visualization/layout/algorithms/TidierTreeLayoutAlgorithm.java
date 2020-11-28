@@ -17,6 +17,7 @@ import org.jgrapht.alg.util.NeighborCache;
 import org.jungrapht.visualization.layout.algorithms.util.ComponentGrouping;
 import org.jungrapht.visualization.layout.algorithms.util.TreeView;
 import org.jungrapht.visualization.layout.algorithms.util.VertexBoundsFunctionConsumer;
+import org.jungrapht.visualization.layout.model.DefaultLayoutModel;
 import org.jungrapht.visualization.layout.model.Dimension;
 import org.jungrapht.visualization.layout.model.LayoutModel;
 import org.jungrapht.visualization.layout.model.Point;
@@ -503,8 +504,9 @@ public class TidierTreeLayoutAlgorithm<V, E> extends AbstractTreeLayoutAlgorithm
     }
     this.defaultRootPredicate =
         v ->
-            graph.incomingEdgesOf(v).isEmpty()
-                || TreeLayout.isIsolatedVertex(layoutModel.getGraph(), v);
+            graph.containsVertex(v)
+                && (graph.incomingEdgesOf(v).isEmpty()
+                    || TreeLayout.isIsolatedVertex(layoutModel.getGraph(), v));
     this.vertexData.clear();
     this.heights.clear();
     if (this.rootPredicate == null) {
@@ -526,6 +528,12 @@ public class TidierTreeLayoutAlgorithm<V, E> extends AbstractTreeLayoutAlgorithm
             .vertexComparator(vertexComparator)
             .vertexPredicate(vertexPredicate);
 
+    if (graph.vertexSet().size() == 1) {
+      V loner = graph.vertexSet().stream().findFirst().get();
+      layoutModel.set(loner, Point.of(layoutModel.getWidth() / 2, layoutModel.getHeight() / 2));
+      return;
+    }
+
     this.roots =
         graph
             .vertexSet()
@@ -537,9 +545,16 @@ public class TidierTreeLayoutAlgorithm<V, E> extends AbstractTreeLayoutAlgorithm
     this.roots = ComponentGrouping.groupByComponents(graph, roots);
 
     if (roots.size() == 0) {
+      if (graph.vertexSet().size() == 1) {
+        layoutModel.setGraph(graph);
+        visit(layoutModel);
+        return;
+      }
       Graph<V, ?> tree = TreeLayoutAlgorithm.getSpanningTree(graph);
-      layoutModel.setGraph(tree);
-      visit(layoutModel);
+      LayoutModel<V> treeLayoutModel = DefaultLayoutModel.from(layoutModel);
+      treeLayoutModel.setGraph(tree);
+      visit(treeLayoutModel);
+      layoutModel.setInitializer(treeLayoutModel);
       return;
     }
 
@@ -592,5 +607,7 @@ public class TidierTreeLayoutAlgorithm<V, E> extends AbstractTreeLayoutAlgorithm
               .filter(v -> !visitedVertices.contains(v))
               .collect(Collectors.toSet()));
     }
+    this.moveVerticesThatOverlapVerticalEdges(layoutModel, horizontalVertexSpacing);
+    this.runAfter();
   }
 }

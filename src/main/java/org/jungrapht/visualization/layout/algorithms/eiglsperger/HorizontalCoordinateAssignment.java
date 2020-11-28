@@ -10,7 +10,9 @@ import static org.jungrapht.visualization.layout.algorithms.eiglsperger.Vertical
 import static org.jungrapht.visualization.layout.algorithms.eiglsperger.VerticalAlignment.VDirection.TtoB;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -174,6 +176,120 @@ public class HorizontalCoordinateAssignment<V, E>
         v.setPoint(balancedPoint);
       }
     }
+
+    int offset = horizontalOffset;
+    for (int i = 0; i < 10; i++) {
+      int sum = 0;
+      log.trace("try {}", i);
+      sum += correctOverlappedVertices(offset);
+      sum += edgeOverlapCorrection(offset);
+      sum += moveVerticesThatOverlapInnerEdges(offset);
+
+      if (sum == 0) {
+        log.trace("done after {} tries ", i);
+        break;
+      }
+      offset *= 0.9;
+    }
+  }
+
+  // gather all vertical inner edges
+  private Set<LE<V, E>> getInnerEdges() {
+    // find all PVertices
+    List<LV<V>> pVertices =
+        Arrays.stream(layers)
+            .flatMap(Arrays::stream)
+            .filter(v -> v instanceof PVertex)
+            .collect(Collectors.toList());
+    Set<LE<V, E>> innerEdges =
+        pVertices
+            .stream()
+            .map(v -> svGraph.outgoingEdgesOf(v).stream().findFirst().get())
+            .collect(Collectors.toSet());
+    return innerEdges;
+  }
+
+  // gather all vertical lines and for any that share the same x, move one
+  private int edgeOverlapCorrection(int offset) {
+    int moved = 0;
+    // find all PVertices
+    List<PVertex> pVertices =
+        Arrays.stream(layers)
+            .flatMap(Arrays::stream)
+            .filter(v -> v instanceof PVertex)
+            .map(v -> (PVertex) v)
+            .collect(Collectors.toList());
+    // if any PVertices share the same x value, then the PVertex and QVertex should be offset
+    Set<Double> xValues = new HashSet<>();
+    log.trace("checking {} pVertices", pVertices.size());
+    for (PVertex<V> pVertex : pVertices) {
+      if (xValues.contains(pVertex.getPoint().x)) {
+        // offset the PVertex and its QVertex
+        QVertex<V> qVertex =
+            (QVertex<V>) neighborCache.successorsOf(pVertex).stream().findFirst().get();
+        // move them both
+        log.trace("got q  check {}", qVertex);
+        pVertex.setPoint(pVertex.getPoint().add(offset, 0));
+        qVertex.setPoint(qVertex.getPoint().add(offset, 0));
+        log.trace("edge ol moved {} {} for edge overlap", pVertex, qVertex);
+        moved++;
+      }
+      xValues.add(pVertex.getPoint().x);
+    }
+    log.trace("done checking");
+    return moved;
+  }
+
+  // offset any vertices that intersect an edge that they are not adjacent to
+  private int moveVerticesThatOverlapInnerEdges(int offset) {
+    int moved = 0;
+    Set<LE<V, E>> innerEdges = getInnerEdges();
+    Map<Double, LE<V, E>> innerEdgeMap =
+        innerEdges
+            .stream()
+            .collect(
+                Collectors.toMap(e -> svGraph.getEdgeSource(e).getPoint().x, e -> e, (a, b) -> b));
+
+    for (LV<V> v : svGraph.vertexSet()) {
+      if (v instanceof PVertex) continue;
+      if (v instanceof QVertex) continue;
+      double x = v.getPoint().x;
+      if (innerEdgeMap.keySet().contains(x)) {
+        double lowy = innerEdgeMap.get(x).getSource().getPoint().y;
+        double hiy = innerEdgeMap.get(x).getTarget().getPoint().y;
+        if (lowy > hiy) {
+          double temp = lowy;
+          lowy = hiy;
+          hiy = temp;
+        }
+        double vy = v.getPoint().y;
+        if (lowy <= vy && vy <= hiy) {
+          v.setPoint(v.getPoint().add(offset, 0));
+          log.trace("moved {}", v);
+          moved++;
+        }
+      }
+    }
+    return moved;
+  }
+
+  private int correctOverlappedVertices(int offset) {
+    int moved = 0;
+    Set<Point> usedPoints = new HashSet<>();
+    for (LV<V> v : svGraph.vertexSet()) {
+      if (v instanceof PVertex) continue;
+      if (v instanceof QVertex) continue;
+      Point balancedPoint = v.getPoint();
+      if (usedPoints.contains(balancedPoint)) {
+        log.trace("changed {} point ", v);
+        log.trace(" from {} ", balancedPoint);
+        balancedPoint = balancedPoint.add(offset, 0);
+        log.trace("   to {}", balancedPoint);
+        moved++;
+      }
+      usedPoints.add(balancedPoint);
+    }
+    return moved;
   }
 
   protected int boundsWidth(Collection<Integer> xValues) {

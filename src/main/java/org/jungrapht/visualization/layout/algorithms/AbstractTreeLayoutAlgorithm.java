@@ -10,14 +10,17 @@
 
 package org.jungrapht.visualization.layout.algorithms;
 
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import org.jgrapht.Graph;
 import org.jgrapht.alg.util.NeighborCache;
 import org.jungrapht.visualization.layout.model.LayoutModel;
 import org.jungrapht.visualization.layout.model.Rectangle;
@@ -229,6 +232,49 @@ public abstract class AbstractTreeLayoutAlgorithm<V> extends AbstractLayoutAlgor
     layoutModel.setSize(maxDimension, maxDimension);
 
     super.expandToFill(layoutModel, vertexContainingRectangle);
+  }
+
+  protected <E> int moveVerticesThatOverlapVerticalEdges(LayoutModel<V> layoutModel, int offset) {
+    int moved = 0;
+    Graph<V, E> graph = layoutModel.getGraph();
+    Map<Double, Set<E>> verticalEdgeMap = new LinkedHashMap<>();
+    graph
+        .edgeSet()
+        .stream()
+        .filter(
+            e ->
+                layoutModel.apply(graph.getEdgeSource(e)).x
+                    == layoutModel.apply(graph.getEdgeTarget(e)).x)
+        .forEach(
+            e ->
+                verticalEdgeMap
+                    .computeIfAbsent(
+                        layoutModel.apply(graph.getEdgeSource(e)).x, k -> new HashSet<>())
+                    .add(e));
+
+    for (V v : graph.vertexSet()) {
+      double x = layoutModel.apply(v).x;
+      for (E edge : verticalEdgeMap.getOrDefault(x, Collections.emptySet())) {
+        V source = graph.getEdgeSource(edge);
+        V target = graph.getEdgeTarget(edge);
+        if (!v.equals(source) && !v.equals(target)) {
+          double lowy = layoutModel.apply(source).y;
+          double hiy = layoutModel.apply(target).y;
+          if (lowy > hiy) {
+            double temp = lowy;
+            lowy = hiy;
+            hiy = temp;
+          }
+          double vy = layoutModel.apply(v).y;
+          if (lowy <= vy && vy <= hiy) {
+            layoutModel.set(v, layoutModel.apply(v).add(offset, 0));
+            log.trace("moved {}", v);
+            moved++;
+          }
+        }
+      }
+    }
+    return moved;
   }
 
   @Override

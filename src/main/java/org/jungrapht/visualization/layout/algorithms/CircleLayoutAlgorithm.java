@@ -12,7 +12,7 @@
  */
 package org.jungrapht.visualization.layout.algorithms;
 
-import static org.jungrapht.visualization.layout.model.LayoutModel.PREFIX;
+import static org.jungrapht.visualization.layout.util.PropertyLoader.PREFIX;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,6 +34,7 @@ import org.jungrapht.visualization.layout.algorithms.util.CircleLayoutReduceEdge
 import org.jungrapht.visualization.layout.algorithms.util.ExecutorConsumer;
 import org.jungrapht.visualization.layout.algorithms.util.Threaded;
 import org.jungrapht.visualization.layout.model.LayoutModel;
+import org.jungrapht.visualization.layout.util.PropertyLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,6 +48,10 @@ public class CircleLayoutAlgorithm<V>
     implements LayoutAlgorithm<V>, AfterRunnable, Threaded, ExecutorConsumer {
 
   private static final Logger log = LoggerFactory.getLogger(CircleLayoutAlgorithm.class);
+
+  static {
+    PropertyLoader.load();
+  }
 
   protected static final String CIRCLE_REDUCE_EDGE_CROSSING = PREFIX + "circle.reduceEdgeCrossing";
   protected static final String CIRCLE_REDUCE_EDGE_CROSSING_MAX_EDGES =
@@ -190,7 +195,7 @@ public class CircleLayoutAlgorithm<V>
                   .thenRun(
                       () -> {
                         log.trace("ReduceEdgeCrossing done");
-                        layoutVertices(layoutModel);
+                        layoutVertices(layoutModel, true);
                         runAfter(); // run the after function
                         layoutModel.getViewChangeSupport().fireViewChanged();
                         // fire an event to say that the layout is done
@@ -204,7 +209,7 @@ public class CircleLayoutAlgorithm<V>
                   .thenRun(
                       () -> {
                         log.trace("ReduceEdgeCrossing done");
-                        layoutVertices(layoutModel);
+                        layoutVertices(layoutModel, true);
                         runAfter(); // run the after function
                         layoutModel.getViewChangeSupport().fireViewChanged();
                         // fire an event to say that the layout is done
@@ -215,7 +220,7 @@ public class CircleLayoutAlgorithm<V>
         }
       } else {
         reduceCrossingRunnable.run();
-        layoutVertices(layoutModel);
+        layoutVertices(layoutModel, true);
         runAfter();
         layoutModel.getViewChangeSupport().fireViewChanged();
         // fire an event to say that the layout is done
@@ -223,7 +228,8 @@ public class CircleLayoutAlgorithm<V>
       }
     } else {
       this.vertexOrderedList = new ArrayList<>(graph.vertexSet());
-      layoutVertices(layoutModel);
+      layoutVertices(layoutModel, false);
+      runAfter();
       layoutModel.getLayoutStateChangeSupport().fireLayoutStateChanged(layoutModel, false);
     }
     if (log.isTraceEnabled()) {
@@ -274,7 +280,7 @@ public class CircleLayoutAlgorithm<V>
     }
   }
 
-  private void layoutVertices(LayoutModel<V> layoutModel) {
+  private void layoutVertices(LayoutModel<V> layoutModel, boolean countCrossings) {
     double height = layoutModel.getHeight();
     double width = layoutModel.getWidth();
 
@@ -291,11 +297,15 @@ public class CircleLayoutAlgorithm<V>
       double posX = Math.cos(angle) * radius + width / 2;
       double posY = Math.sin(angle) * radius + height / 2;
       layoutModel.set(vertex, posX, posY);
-      log.trace("set {} to {},{} ", vertex, posX, posY);
+      if (log.isTraceEnabled()) {
+        log.trace("set {} to {},{} ", vertex, posX, posY);
+      }
 
       i++;
     }
-    crossingCount = countCrossings();
+    if (countCrossings) {
+      crossingCount = countCrossings();
+    }
   }
 
   @Override

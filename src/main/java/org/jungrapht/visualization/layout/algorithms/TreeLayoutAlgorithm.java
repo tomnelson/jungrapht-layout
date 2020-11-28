@@ -18,6 +18,7 @@ import org.jgrapht.alg.spanning.PrimMinimumSpanningTree;
 import org.jgrapht.graph.AsUndirectedGraph;
 import org.jgrapht.graph.DefaultGraphType;
 import org.jgrapht.graph.builder.GraphTypeBuilder;
+import org.jungrapht.visualization.layout.model.DefaultLayoutModel;
 import org.jungrapht.visualization.layout.model.Dimension;
 import org.jungrapht.visualization.layout.model.LayoutModel;
 import org.jungrapht.visualization.layout.model.Point;
@@ -113,7 +114,9 @@ public class TreeLayoutAlgorithm<V> extends AbstractTreeLayoutAlgorithm<V>
     }
 
     this.defaultRootPredicate =
-        v -> graph.incomingEdgesOf(v).isEmpty() || TreeLayout.isIsolatedVertex(graph, v);
+        v ->
+            graph.containsVertex(v)
+                && (graph.incomingEdgesOf(v).isEmpty() || TreeLayout.isIsolatedVertex(graph, v));
     // when provided, replace the horizontal and vertical spacing with twice the average
     // width and height of the Shapes returned by the function
     if (vertexBoundsFunction != null) {
@@ -126,6 +129,12 @@ public class TreeLayoutAlgorithm<V> extends AbstractTreeLayoutAlgorithm<V>
     } else {
       this.rootPredicate = this.rootPredicate.or(this.defaultRootPredicate);
     }
+    if (graph.vertexSet().size() == 1) {
+      V loner = graph.vertexSet().stream().findFirst().get();
+      layoutModel.set(loner, Point.of(layoutModel.getWidth() / 2, layoutModel.getHeight() / 2));
+      return Collections.singleton(loner);
+    }
+
     List<V> roots =
         graph
             .vertexSet()
@@ -136,9 +145,14 @@ public class TreeLayoutAlgorithm<V> extends AbstractTreeLayoutAlgorithm<V>
             .collect(Collectors.toList());
 
     if (roots.size() == 0) {
+      if (graph.vertexSet().size() == 1) {
+        return graph.vertexSet();
+      }
       Graph<V, ?> tree = TreeLayoutAlgorithm.getSpanningTree(graph);
-      layoutModel.setGraph(tree);
-      Set<V> treeRoots = buildTree(layoutModel);
+      LayoutModel<V> treeLayoutModel = DefaultLayoutModel.from(layoutModel);
+      treeLayoutModel.setGraph(tree);
+      Set<V> treeRoots = buildTree(treeLayoutModel);
+      layoutModel.setInitializer(treeLayoutModel);
       return treeRoots;
     }
 
@@ -159,9 +173,11 @@ public class TreeLayoutAlgorithm<V> extends AbstractTreeLayoutAlgorithm<V>
     }
     this.rootPredicate = null;
 
+    this.moveVerticesThatOverlapVerticalEdges(layoutModel, horizontalVertexSpacing);
     if (expandLayout) {
       expandToFill(layoutModel);
     }
+    this.after.run();
     return new LinkedHashSet<>(roots);
   }
 
